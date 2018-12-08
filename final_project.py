@@ -3,9 +3,13 @@ import json
 from bs4 import BeautifulSoup
 import re
 import csv
-
-# import nltk
-# import tltk
+import collections
+import nltk
+import tltk
+from sklearn.linear_model import LogisticRegression
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
 
 """
 process of this program
@@ -89,21 +93,73 @@ def scrape(start_id, number):
     file.close()
 
 
+# error check function (in case the number of rows are incorrect)
+def error_check(tsv_file, num_of_row):
+    """
+    the correct number of thairath.tsv is 4 (id, headline, description, article)
+    the correct number of labeled tsv is 5 (id, headline, description, article, label)
+    return the id and the incorrect number of rows
+
+    error_check('thairath.tsv', 4)
+    >> 1011000 5
+    """
+    file = open(tsv_file)
+    f = csv.reader(file, delimiter='\t')
+    for line in f:
+        if len(line) != num_of_row:
+            print(line[0], len(line))  # print id of incorrect column
+
+
 ### 2. function for find articles & save as tsv ###
 def find_article(keyword, label, new_tsv):
+    """
+    find articles that contains keyword
+    save as tsv with "label" for supervised learning
+
+    keyword: "ญีปุ่น"
+    article: "ประเทศญีปุ่นจัดงาน..."
+    label: "JP"
+    """
     open_file = open('thairath.tsv', 'r', encoding='utf-8')
     write_file = open(new_tsv, 'a', encoding='utf-8')
 
-    lines = [(id, headline, description, article)
+    # make list of lists[id, headline, description, article] from tsv
+    lines = [[id, headline, description, article]
              for id, headline, description, article in csv.reader(open_file, delimiter='\t')]
+
+    # if article contains the keyword, add label and make new list of lists
+    labeled_list = []
     for line in lines:
-        id = line[0]
-        headline = line[1]
         description = line[2]
         article = line[3].strip('\n')
         if keyword in article or keyword in description:
-            write_file.write(str(id) + '\t' + headline + '\t' + description
-                             + '\t' + article + '\t' + label + '\n')  # save as tsv
+            labeled_list.append(line + [label])
+
+    # save as new tsv file
+    writer = csv.writer(write_file, lineterminator='\n', delimiter='\t')
+    writer.writerows(labeled_list)
 
     open_file.close()
     write_file.close()
+
+
+### 3. function for supervised learning ###
+def count_label(tsv_file):
+    """
+    open tsv file > tuple(id, headline, description, article, label)
+    and print the number of each label
+
+    count_tsv(country.tsv)
+    >>[('JP', 3000), ('US', 2000), ('TH', 1000)]
+    """
+    ### open files ###
+    open_file = open(tsv_file, 'r', encoding='utf-8')
+    lines = [(id, headline, description, article, label)
+             for id, headline, description, article, label in csv.reader(open_file, delimiter='\t')]
+
+    ### make label list ###
+    label_list = [tuple[-1] for tuple in lines]
+    label_counter = collections.Counter()
+    for label in label_list:
+        label_counter[label] += 1
+    print(label_counter.most_common())  # check the number of each label
