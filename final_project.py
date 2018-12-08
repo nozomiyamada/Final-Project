@@ -2,25 +2,26 @@ import requests
 import json
 from bs4 import BeautifulSoup
 import re
-import nltk
-import tltk
-soup = BeautifulSoup(html.text, "html.parser")
+import csv
+
+# import nltk
+# import tltk
 
 """
 process of this program
-1. get articles and headlines from Thairath (as many as possible & regardless of content for future works)
+1. get articles and headlines from Thairath
+    (as many as possible & regardless of content for future works)
 2. find articles that contains keyword (in this project, use 'countries')
 3. supervised training with sk-learn
 4. find words and metaphors that uniquely indicate the country
 """
 
-
 ### 1. function for scraping ###
 url = 'https://www.thairath.co.th/content/'
-file = open('thairath.tsv', 'a')
 """
 all contents of Thairath are https://www.thairath.co.th/content/******
 """
+
 
 def text_trim(text):
     """
@@ -38,6 +39,7 @@ def text_trim(text):
     text = text.replace('&rdquo;', '”')
     return text
 
+
 def return_str(text):
     """
     return original text if any
@@ -48,6 +50,7 @@ def return_str(text):
         return ''
     else:
         return text_trim(text)
+
 
 def scrape(start_id, number):
     """
@@ -69,17 +72,38 @@ def scrape(start_id, number):
     ##note: all articles have the same structure "<script>...</script>" more than 2 times
     but always final one is the real content
     """
+    file = open('thairath.tsv', 'a', encoding='utf-8')
     for id in range(start_id, start_id + number):
-        response = requests.get(url + str(id)) # get html
-        if response.status_code == 200: # if 404 pass
-            soup = BeautifulSoup(response.text, "html.parser") # get text
-            html = soup.find_all('script', type="application/ld+json") # find more than 2 tags <script>
-            dict = json.loads(html.text[-1]) # convert final one from json into dict
+        response = requests.get(url + str(id))  # get html
+        if response.status_code == 200:  # if 404 pass
+            soup = BeautifulSoup(response.text, "html.parser")  # get text
+            content_list = soup.find_all('script', type="application/ld+json")  # find more than 2 tags <script>
+            dict = json.loads(content_list[-1].text)  # convert final one from json into dict
 
             headline = return_str(dict['headline'])
             description = return_str(dict['description'])
             article = return_str(dict['articleBody'])
 
             file.write(str(id) + '\t' + headline + '\t' + description
-                       + '\t' + article + '\n') # save as tsv
+                       + '\t' + article + '\n')  # save as tsv
     file.close()
+
+
+### 2. function for find articles & save as tsv ###
+def find_article(keyword, label, new_tsv):
+    open_file = open('thairath.tsv', 'r', encoding='utf-8')
+    write_file = open(new_tsv, 'a', encoding='utf-8')
+
+    lines = [(id, headline, description, article)
+             for id, headline, description, article in csv.reader(open_file, delimiter='\t')]
+    for line in lines:
+        id = line[0]
+        headline = line[1]
+        description = line[2]
+        article = line[3].strip('\n')
+        if keyword in article or keyword in description:
+            write_file.write(str(id) + '\t' + headline + '\t' + description
+                             + '\t' + article + '\t' + label + '\n')  # save as tsv
+
+    open_file.close()
+    write_file.close()
