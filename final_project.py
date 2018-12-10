@@ -162,4 +162,67 @@ def count_label(tsv_file):
     label_counter = collections.Counter()
     for label in label_list:
         label_counter[label] += 1
+<<<<<<< HEAD
     print(label_counter.most_common())  # check the number of each label
+
+    file.close()
+
+
+# functions for train
+def tokenizer(text):
+    tokens = tltk.nlp.word_segment(text).split('|')
+    word_list = []
+    for token in tokens:
+        reshaped = token.strip('<s/>')
+        reshaped = reshaped.strip('<u/>')
+        if reshaped != ' ':
+            word_list.append(reshaped)
+    return word_list
+
+
+def tokenize_check(tsv_file, index):
+    """
+    print one article with tokenizer
+    """
+    with open(tsv_file) as file:
+        f = csv.reader(file, delimiter='\t')
+        line = list(f)[index - 1]
+        print(tokenizer(line[-1]))
+
+
+def train(tsv_file, index):
+    """
+    train with
+    headline ... index = 1
+    description ... index = 2  # most appropriate
+    article ... index = 3
+    """
+    # make label list and feature dictionary
+    file = open(tsv_file)
+    lines = csv.reader(file, delimiter='\t')
+
+    label_list = []
+    feat_dic_list = []
+    for line in lines:
+        word_list = tokenizer(line[index])  # ex. line[1] = headline
+        feat_dic = {word: 1 for word in word_list}
+        feat_dic['LENGTH'] = len(word_list)  # length of sentence
+        feat_dic_list.append(feat_dic)
+        label_list.append(line[-1])
+
+    # sparse matrix & train
+    sparse_feature_matrix = dv.fit_transform(feat_dic_list)
+    model.fit(sparse_feature_matrix, np.array(label_list))
+
+
+def get_features(label_index, top_k):
+    # get features from index
+    parameter_matrix = model.coef_
+    top_features = parameter_matrix.argsort()[:, -(top_k) - 1:-1]
+    label_top_features = [dv.get_feature_names()[x] for x
+                          in top_features[label_index]]
+    label_top_features.reverse()
+    print(label_top_features)
+=======
+    print(label_counter.most_common())  # check the number of each label
+>>>>>>> parent of 4cba0fc... update 10/12
