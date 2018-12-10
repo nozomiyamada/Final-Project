@@ -3,21 +3,41 @@ import json
 from bs4 import BeautifulSoup
 import re
 import csv
+import numpy as np
 import collections
+
 import nltk
 import tltk
+
 from sklearn.linear_model import LogisticRegression
+
+model = LogisticRegression()
+
 from sklearn.feature_extraction import DictVectorizer
+
+dv = DictVectorizer()
+
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
 
 """
 process of this program
-1. get articles and headlines from Thairath
+1) get articles and headlines from Thairath
     (as many as possible & regardless of content for future works)
-2. find articles that contains keyword (in this project, use 'countries')
-3. supervised training with sk-learn
-4. find words and metaphors that uniquely indicate the country
+2) find articles that contains keyword (in this project, use 'countries')
+3) supervised training with sk-learn
+4) find words and metaphors that uniquely indicate the country
+
+all process
+1) scrape(130000, 1000)
+1) error_check('thairath.tsv')
+    > if any, print_content(id)
+    > copy_headline(tsv, id)
+2) find_article('ญี่ปุ่น', 'JP', 'country.tsv')
+3) count_label('country.tsv')
+3) tokenize_check(tsv, index)
+3) train('country.tsv', 2)
+3) get_features(2, 20)
 """
 
 ### 1. function for scraping ###
@@ -29,7 +49,7 @@ all contents of Thairath are https://www.thairath.co.th/content/******
 
 def text_trim(text):
     """
-    trim scraped text with .replace
+    trim scraped text from html
     """
     text = text.replace('\r', '')
     text = text.replace('\n', ' ')
@@ -93,7 +113,7 @@ def scrape(start_id, number):
     file.close()
 
 
-# error check function (in case the number of rows are incorrect)
+# error check 1 (in case the number of rows are incorrect)
 def error_check(tsv_file, num_of_row):
     """
     the correct number of thairath.tsv is 4 (id, headline, description, article)
@@ -103,11 +123,82 @@ def error_check(tsv_file, num_of_row):
     error_check('thairath.tsv', 4)
     >> 1011000 5
     """
-    file = open(tsv_file)
-    f = csv.reader(file, delimiter='\t')
+    with open(tsv_file) as file:
+        lines = csv.reader(file, delimiter='\t')
+        for line in lines:
+            if len(line) != num_of_row:
+                print(line[0], len(line))  # print id of incorrect column
+
+
+# error check 2 (specify how incorrect one incorrect)
+def print_content(tsv_file, id):
+    """
+    print one article from id in order to check
+
+    print_content('thairath.tsv', 1200000)
+    >> 1200000
+    >> headline
+    >> description
+    >> article
+    """
+    with open(tsv_file) as file:
+        lines = csv.reader(file, delimiter='\t')
+        for line in lines:
+            if line[0] == str(id):
+                for i in range(len(line)):
+                    print(i, line[i])
+                    print('--------------------------------------')
+
+
+# error check 3 (reshape tsv)
+def copy_headline(tsv_file, id):
+    """
+    some articles have only headline (no description)
+    if then, copy headline to description
+
+    incorrect data:
+    line[0] = id
+    line[1] = headline
+    line[2] = article
+    """
+    open_file = open(tsv_file)
+    write_file = open('new.tsv', 'w')
+    lines = csv.reader(open_file, delimiter='\t')
+    new_list = []
+    for line in lines:
+        if line[0] == str(id) and len(line) == 3:
+            new_line = [line[0], line[1], line[1], line[2]]
+            new_list.append(new_line)
+        else:
+            new_list.append(line)
+
+    # save as new tsv file
+    writer = csv.writer(write_file, lineterminator='\n', delimiter='\t')
+    writer.writerows(new_list)
+    open_file.close()
+    write_file.close()
+
+
+# error check 4 (delete article)
+def delete(tsv_file, id):
+    """
+    delete one line with specifying ID
+    """
+    open_file = open(tsv_file)
+    write_file = open('new.tsv', 'w')
+    f = csv.reader(open_file, delimiter='\t')
+    new_list = []
     for line in f:
-        if len(line) != num_of_row:
-            print(line[0], len(line))  # print id of incorrect column
+        if line[0] == str(id):
+            pass
+        else:
+            new_list.append(line)
+
+    # save as new tsv file
+    writer = csv.writer(write_file, lineterminator='\n', delimiter='\t')
+    writer.writerows(new_list)
+    open_file.close()
+    write_file.close()
 
 
 ### 2. function for find articles & save as tsv ###
@@ -121,11 +212,8 @@ def find_article(keyword, label, new_tsv):
     label: "JP"
     """
     open_file = open('thairath.tsv', 'r', encoding='utf-8')
-    write_file = open(new_tsv, 'a', encoding='utf-8')
-
-    # make list of lists[id, headline, description, article] from tsv
-    lines = [[id, headline, description, article]
-             for id, headline, description, article in csv.reader(open_file, delimiter='\t')]
+    write_file = open(new_tsv, 'a', encoding='utf-8')  # append mode
+    lines = csv.reader(open_file, delimiter='\t')
 
     # if article contains the keyword, add label and make new list of lists
     labeled_list = []
@@ -138,7 +226,6 @@ def find_article(keyword, label, new_tsv):
     # save as new tsv file
     writer = csv.writer(write_file, lineterminator='\n', delimiter='\t')
     writer.writerows(labeled_list)
-
     open_file.close()
     write_file.close()
 
@@ -153,18 +240,15 @@ def count_label(tsv_file):
     >>[('JP', 3000), ('US', 2000), ('TH', 1000)]
     """
     ### open files ###
-    open_file = open(tsv_file, 'r', encoding='utf-8')
-    lines = [(id, headline, description, article, label)
-             for id, headline, description, article, label in csv.reader(open_file, delimiter='\t')]
+    file = open(tsv_file, 'r', encoding='utf-8')
+    lines = csv.reader(file, delimiter='\t')
 
     ### make label list ###
-    label_list = [tuple[-1] for tuple in lines]
+    label_list = [line[-1] for line in lines]
     label_counter = collections.Counter()
     for label in label_list:
         label_counter[label] += 1
-<<<<<<< HEAD
     print(label_counter.most_common())  # check the number of each label
-
     file.close()
 
 
@@ -195,7 +279,7 @@ def train(tsv_file, index):
     train with
     headline ... index = 1
     description ... index = 2  # most appropriate
-    article ... index = 3
+    article ... index = 3 # toooooooo long
     """
     # make label list and feature dictionary
     file = open(tsv_file)
@@ -205,7 +289,7 @@ def train(tsv_file, index):
     feat_dic_list = []
     for line in lines:
         word_list = tokenizer(line[index])  # ex. line[1] = headline
-        feat_dic = {word: 1 for word in word_list}
+        feat_dic = {word: 1 for word in word_list if not word[0].isdigit()}
         feat_dic['LENGTH'] = len(word_list)  # length of sentence
         feat_dic_list.append(feat_dic)
         label_list.append(line[-1])
@@ -223,6 +307,3 @@ def get_features(label_index, top_k):
                           in top_features[label_index]]
     label_top_features.reverse()
     print(label_top_features)
-=======
-    print(label_counter.most_common())  # check the number of each label
->>>>>>> parent of 4cba0fc... update 10/12
