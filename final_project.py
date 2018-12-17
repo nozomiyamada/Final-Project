@@ -10,15 +10,8 @@ import nltk
 import tltk
 
 from sklearn.linear_model import LogisticRegression
-
-model = LogisticRegression()
-
 from sklearn.feature_extraction import DictVectorizer
-
-dv = DictVectorizer()
-
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 
 """
 process of this program
@@ -32,12 +25,13 @@ all process
 1) scrape(130000, 1000)
 1) error_check('thairath.tsv')
     > if any, print_content(id)
-    > copy_headline(tsv, id)
+    > copy_headline(tsv, *id)
 2) find_article('ญี่ปุ่น', 'JP', 'country.tsv')
-3) count_label('country.tsv')
-3) tokenize_check(tsv, index)
-3) train('country.tsv', 2)
-3) get_features(2, 20)
+2) count_label('country.tsv')
+3) tokenize_headline('country.tsv', 'headline.tsv', 0, 1000)
+4) ml.train('headline.tsv', 1)
+4) ml.evaluate('headline_test.tsv', 1)
+4) get_features(0, 100)
 """
 
 ### 1. function for scraping ###
@@ -83,12 +77,12 @@ def scrape(start_id, number):
     scrape(1000000, 100)
     >> save id, headline, description, article as tsv file
 
-    get html as json and convert to dict
+    get html, scrape with bs4, convert json to dict
     html structure is:
 
     <script type = "application/ld+json" async = "" class = "next-head">{
     "headline": "..."
-	"description": "...."
+    "description": "...."
     "articleBody": "....."
     .....
     }</script>
@@ -96,7 +90,7 @@ def scrape(start_id, number):
     ##note: all articles have the same structure "<script>...</script>" more than 2 times
     but always final one is the real content
     """
-    file = open('thairath.tsv', 'a', encoding='utf-8')
+    file = open('thairath.tsv', 'a', encoding='utf-8')  # append mode
     for id in range(start_id, start_id + number):
         response = requests.get(url + str(id))  # get html
         if response.status_code == 200:  # if 404 pass
@@ -151,7 +145,7 @@ def print_content(tsv_file, id):
 
 
 # error check 3 (reshape tsv)
-def copy_headline(tsv_file, id):
+def copy_headline(tsv_file, *id):  # *id > tuple of ids
     """
     some articles have only headline (no description)
     if then, copy headline to description
@@ -159,15 +153,16 @@ def copy_headline(tsv_file, id):
     incorrect data:
     line[0] = id
     line[1] = headline
+    (no description)
     line[2] = article
     """
-    open_file = open(tsv_file)
+    open_file = open(tsv_file, 'r')
     write_file = open('new.tsv', 'w')
     lines = csv.reader(open_file, delimiter='\t')
     new_list = []
     for line in lines:
-        if line[0] == str(id) and len(line) == 3:
-            new_line = [line[0], line[1], line[1], line[2]]
+        if int(line[0]) in id and len(line) == 3:  # if no description
+            new_line = [line[0], line[1], line[1], line[2]]  # copy headline
             new_list.append(new_line)
         else:
             new_list.append(line)
@@ -186,9 +181,9 @@ def delete(tsv_file, id):
     """
     open_file = open(tsv_file)
     write_file = open('new.tsv', 'w')
-    f = csv.reader(open_file, delimiter='\t')
+    lines = csv.reader(open_file, delimiter='\t')
     new_list = []
-    for line in f:
+    for line in lines:
         if line[0] == str(id):
             pass
         else:
@@ -211,7 +206,7 @@ def find_article(keyword, label, new_tsv):
     article: "ประเทศญีปุ่นจัดงาน..."
     label: "JP"
     """
-    open_file = open('thairath.tsv', 'r', encoding='utf-8')
+    open_file = open('thairath2.tsv', 'r', encoding='utf-8')
     write_file = open(new_tsv, 'a', encoding='utf-8')  # append mode
     lines = csv.reader(open_file, delimiter='\t')
 
@@ -230,7 +225,6 @@ def find_article(keyword, label, new_tsv):
     write_file.close()
 
 
-### 3. function for supervised learning ###
 def count_label(tsv_file):
     """
     open tsv file > tuple(id, headline, description, article, label)
@@ -248,18 +242,21 @@ def count_label(tsv_file):
     label_counter = collections.Counter()
     for label in label_list:
         label_counter[label] += 1
-    print(label_counter.most_common())  # check the number of each label
+    print(label_counter)  # check the number of each label
     file.close()
 
 
-# functions for train
+### 3. functions for tokenize ###
 def tokenizer(text):
     tokens = tltk.nlp.word_segment(text).split('|')
     word_list = []
     for token in tokens:
         reshaped = token.strip('<s/>')
         reshaped = reshaped.strip('<u/>')
-        if reshaped != ' ':
+        reshaped = reshaped.strip(' ')
+        reshaped = reshaped.strip('Fail>')
+        reshaped = reshaped.strip('</Fail')
+        if reshaped != '':
             word_list.append(reshaped)
     return word_list
 
@@ -269,41 +266,129 @@ def tokenize_check(tsv_file, index):
     print one article with tokenizer
     """
     with open(tsv_file) as file:
-        f = csv.reader(file, delimiter='\t')
-        line = list(f)[index - 1]
-        print(tokenizer(line[-1]))
+        lines = csv.reader(file, delimiter='\t')
+        line = list(lines)[index]
+        print(tokenizer(line[1]), '\n')
+        print(tokenizer(line[2]), '\n')
+        print(tokenizer(line[3]))
 
 
-def train(tsv_file, index):
+def tokenize_all(open_tsv, write_tsv, start_index, end_index):
     """
-    train with
-    headline ... index = 1
-    description ... index = 2  # most appropriate
-    article ... index = 3 # toooooooo long
+    read article from tsv file and save tokenized text
+    tokenize_all('country.tsv', 'country_tokenized.tsv', 0, 200)
     """
-    # make label list and feature dictionary
-    file = open(tsv_file)
-    lines = csv.reader(file, delimiter='\t')
+    open_file = open(open_tsv, 'r', encoding='utf-8')
+    write_file = open(write_tsv, 'a', encoding='utf-8')  # append mode
+    lines = csv.reader(open_file, delimiter='\t')
+    new_list = []
+    for line in list(lines)[start_index: end_index + 1]:
+        id = line[0]
+        headline = '|'.join(tokenizer(line[1]))
+        description = '|'.join(tokenizer(line[2]))
+        article = '|'.join(tokenizer(line[3]))
+        new_line = [id, headline, description, article, line[4]]
+        new_list.append(new_line)
 
-    label_list = []
-    feat_dic_list = []
-    for line in lines:
-        word_list = tokenizer(line[index])  # ex. line[1] = headline
-        feat_dic = {word: 1 for word in word_list if not word[0].isdigit()}
-        feat_dic['LENGTH'] = len(word_list)  # length of sentence
-        feat_dic_list.append(feat_dic)
-        label_list.append(line[-1])
-
-    # sparse matrix & train
-    sparse_feature_matrix = dv.fit_transform(feat_dic_list)
-    model.fit(sparse_feature_matrix, np.array(label_list))
+    writer = csv.writer(write_file, lineterminator='\n', delimiter='\t')
+    writer.writerows(new_list)
+    open_file.close()
+    write_file.close()
 
 
-def get_features(label_index, top_k):
-    # get features from index
-    parameter_matrix = model.coef_
-    top_features = parameter_matrix.argsort()[:, -(top_k) - 1:-1]
-    label_top_features = [dv.get_feature_names()[x] for x
-                          in top_features[label_index]]
-    label_top_features.reverse()
-    print(label_top_features)
+def tokenize_headline(open_tsv, write_tsv, start_index, end_index):
+    """
+    tokenize only headline
+    """
+    open_file = open(open_tsv, 'r', encoding='utf-8')
+    write_file = open(write_tsv, 'a', encoding='utf-8')  # append mode
+    lines = csv.reader(open_file, delimiter='\t')
+    for line in list(lines)[start_index: end_index + 1]:
+        id = line[0]
+        headline = '|'.join(tokenizer(line[1]))
+        label = line[4]
+        write_file.write(id + '\t' + headline + '\t' + label + '\n')
+    open_file.close()
+    write_file.close()
+
+
+### 4. function for train (need instance)###
+class ML:
+    """
+    method
+    1: .train(train_tsv, index)
+    2: .evaluate(test_tsv, index)
+    6: .get_feature(label_index, top_k)
+    """
+
+    def __init__(self):
+        self.model = LogisticRegression()
+        self.dv = DictVectorizer()
+
+    def train(self, train_tsv, index):
+        """
+        train with tokenized data
+        split tokenized data with '|'
+        index: headline...1, description...2, article...3
+        """
+        # make label list and feature dictionary
+        file = open(train_tsv)
+        lines = csv.reader(file, delimiter='\t')
+
+        label_list = []
+        feat_dic_list = []
+        for line in lines:
+            word_list = line[index].split('|')
+            feat_dic = {word: 1 for word in word_list if word != '' and word[0].isalpha()}
+            feat_dic['LENGTH'] = len(word_list)  # length of sentence
+            feat_dic_list.append(feat_dic)
+            label_list.append(line[-1])
+
+        # sparse matrix & train
+        sparse_feature_matrix = self.dv.fit_transform(feat_dic_list)
+        self.model.fit(sparse_feature_matrix, np.array(label_list))
+
+    def get_feature(self, label_index, top_k):
+        # get features from index
+        parameter_matrix = self.model.coef_
+        top_features = parameter_matrix.argsort()[:, -(top_k) - 1:-1]
+        label_top_features = [self.dv.get_feature_names()[x] for x
+                              in top_features[label_index]]
+        label_top_features.reverse()
+        print(label_top_features)
+
+    def evaluate(self, test_tsv, index):
+        file = open(test_tsv)
+        lines = csv.reader(file, delimiter='\t')
+
+        label_list = []
+        feat_dic_list = []
+        for line in lines:
+            word_list = line[index].split('|')
+            feat_dic = {word: 1 for word in word_list if word != '' and word[0].isalpha()}
+            feat_dic['LENGTH'] = len(word_list)  # length of sentence
+            feat_dic_list.append(feat_dic)
+            label_list.append(line[-1])
+
+        self.label_list = label_list
+        # sparse matrix & test
+        sparse_feature_matrix = self.dv.transform(feat_dic_list)
+        self.result_list = self.model.predict(sparse_feature_matrix)
+
+        # accuracy
+        accuracy = accuracy_score(self.label_list, self.result_list)
+        print("Accuracy")
+        print(accuracy)
+
+        # confusion matrix
+        matrix = confusion_matrix(self.label_list, self.result_list)
+        print("\nConfusion Matrix")
+        print(matrix)
+
+        # Precision, Recall, F score
+        report = classification_report(self.label_list, self.result_list)
+        print("\nReport")
+        print(report)
+
+
+ml = ML()
