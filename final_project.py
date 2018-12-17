@@ -22,7 +22,7 @@ process of this program
 4) find words and metaphors that uniquely indicate the country
 
 all process
-1) scrape(130000, 1000)
+1) scrape('thairath.tsv', 130000, 1000)
 1) error_check('thairath.tsv')
     > if any, print_content(id)
     > copy_headline(tsv, *id)
@@ -35,10 +35,8 @@ all process
 """
 
 ### 1. function for scraping ###
+# all contents of Thairath are https://www.thairath.co.th/content/*******
 url = 'https://www.thairath.co.th/content/'
-"""
-all contents of Thairath are https://www.thairath.co.th/content/******
-"""
 
 
 def text_trim(text):
@@ -70,7 +68,7 @@ def return_str(text):
         return text_trim(text)
 
 
-def scrape(start_id, number):
+def scrape(tsv_file, start_id, number):
     """
     specify content id and the maximum number of request.get
 
@@ -90,13 +88,15 @@ def scrape(start_id, number):
     ##note: all articles have the same structure "<script>...</script>" more than 2 times
     but always final one is the real content
     """
-    file = open('thairath.tsv', 'a', encoding='utf-8')  # append mode
+    write_file = open(tsv_file, 'a', encoding='utf-8')  # append mode
     for id in range(start_id, start_id + number):
         response = requests.get(url + str(id))  # get html
         if response.status_code == 200:  # if 404 pass
             soup = BeautifulSoup(response.text, "html.parser")  # get text
-            content_list = soup.find_all('script', type="application/ld+json")  # find more than 2 tags <script>
-            dict = json.loads(content_list[-1].text)  # convert final one from json into dict
+            # find more than 2 tags <script>
+            content_list = soup.find_all('script', type="application/ld+json")
+            # convert final one from json into dict
+            dict = json.loads(content_list[-1].text)
 
             headline = return_str(dict['headline'])
             description = return_str(dict['description'])
@@ -104,7 +104,7 @@ def scrape(start_id, number):
 
             file.write(str(id) + '\t' + headline + '\t' + description
                        + '\t' + article + '\n')  # save as tsv
-    file.close()
+    write_file.close()
 
 
 # error check 1 (in case the number of rows are incorrect)
@@ -155,6 +155,9 @@ def copy_headline(tsv_file, *id):  # *id > tuple of ids
     line[1] = headline
     (no description)
     line[2] = article
+
+    copy_headline(tsv_file, 1200000, 1200001)
+    >> save [id, headline, headline(copy), article] in tsv
     """
     open_file = open(tsv_file, 'r')
     write_file = open('new.tsv', 'w')
@@ -177,7 +180,7 @@ def copy_headline(tsv_file, *id):  # *id > tuple of ids
 # error check 4 (delete article)
 def delete(tsv_file, id):
     """
-    delete one line with specifying ID
+    delete one line with ID
     """
     open_file = open(tsv_file)
     write_file = open('new.tsv', 'w')
@@ -197,7 +200,7 @@ def delete(tsv_file, id):
 
 
 ### 2. function for find articles & save as tsv ###
-def find_article(keyword, label, new_tsv):
+def find_article(open_tsv, write_tsv, keyword, label):
     """
     find articles that contains keyword
     save as tsv with "label" for supervised learning
@@ -205,9 +208,11 @@ def find_article(keyword, label, new_tsv):
     keyword: "ญีปุ่น"
     article: "ประเทศญีปุ่นจัดงาน..."
     label: "JP"
+
+    find_article('thairath.tsv', 'country.tsv', 'ญี่ปุ่น', 'JP')
     """
-    open_file = open('thairath2.tsv', 'r', encoding='utf-8')
-    write_file = open(new_tsv, 'a', encoding='utf-8')  # append mode
+    open_file = open(open_tsv, 'r', encoding='utf-8')
+    write_file = open(write_tsv, 'a', encoding='utf-8')  # append mode
     lines = csv.reader(open_file, delimiter='\t')
 
     # if article contains the keyword, add label and make new list of lists
@@ -263,7 +268,13 @@ def tokenizer(text):
 
 def tokenize_check(tsv_file, index):
     """
-    print one article with tokenizer
+    print tokenized headline, description, article
+
+    tokenize_check('country.tsv', 6001)
+    >>
+    ['ทช.', 'ระดม', 'รถบรรทุก', 'น้ำ', 'ช่วย',...]
+    ['นาย', 'พิ', 'ศักดิ์', 'จิต', 'วิริยะ', 'วศิน',...]
+    ['นาย', 'พิ', 'ศักดิ์', 'จิต', 'วิริยะ', 'วศิน',...]
     """
     with open(tsv_file) as file:
         lines = csv.reader(file, delimiter='\t')
@@ -274,9 +285,15 @@ def tokenize_check(tsv_file, index):
 
 
 def tokenize_all(open_tsv, write_tsv, start_index, end_index):
-    """
+    """"
     read article from tsv file and save tokenized text
+    tokenize headline, description, article
+    function:tokenizer returns 'list of words'
+    '|'.join() when save as tsv file
+
     tokenize_all('country.tsv', 'country_tokenized.tsv', 0, 200)
+    >>
+    1200403	ผลไม้|ไทย|ผงาด|ที่|1|ใน|ใจ|แดน|มังกร ....
     """
     open_file = open(open_tsv, 'r', encoding='utf-8')
     write_file = open(write_tsv, 'a', encoding='utf-8')  # append mode
@@ -284,9 +301,11 @@ def tokenize_all(open_tsv, write_tsv, start_index, end_index):
     new_list = []
     for line in list(lines)[start_index: end_index + 1]:
         id = line[0]
+        # tokenizer > list of words > joined text
         headline = '|'.join(tokenizer(line[1]))
         description = '|'.join(tokenizer(line[2]))
         article = '|'.join(tokenizer(line[3]))
+
         new_line = [id, headline, description, article, line[4]]
         new_list.append(new_line)
 
@@ -312,24 +331,24 @@ def tokenize_headline(open_tsv, write_tsv, start_index, end_index):
     write_file.close()
 
 
-### 4. function for train (need instance)###
+### 4. function for train (need instance) ###
 class ML:
     """
     method
     1: .train(train_tsv, index)
     2: .evaluate(test_tsv, index)
-    6: .get_feature(label_index, top_k)
+    3: .get_feature(label_index, top_k)
     """
 
     def __init__(self):
         self.model = LogisticRegression()
         self.dv = DictVectorizer()
 
-    def train(self, train_tsv, index):
+    def train(self, train_tsv, target):
         """
         train with tokenized data
         split tokenized data with '|'
-        index: headline...1, description...2, article...3
+        train target: headline...1, description...2, article...3
         """
         # make label list and feature dictionary
         file = open(train_tsv)
@@ -338,7 +357,8 @@ class ML:
         label_list = []
         feat_dic_list = []
         for line in lines:
-            word_list = line[index].split('|')
+            word_list = line[target].split('|')
+            # iff the first character is letter, add to feature dictionary
             feat_dic = {word: 1 for word in word_list if word != '' and word[0].isalpha()}
             feat_dic['LENGTH'] = len(word_list)  # length of sentence
             feat_dic_list.append(feat_dic)
@@ -357,20 +377,20 @@ class ML:
         label_top_features.reverse()
         print(label_top_features)
 
-    def evaluate(self, test_tsv, index):
+    def evaluate(self, test_tsv, target):
         file = open(test_tsv)
         lines = csv.reader(file, delimiter='\t')
 
         label_list = []
         feat_dic_list = []
         for line in lines:
-            word_list = line[index].split('|')
+            word_list = line[target].split('|')
             feat_dic = {word: 1 for word in word_list if word != '' and word[0].isalpha()}
             feat_dic['LENGTH'] = len(word_list)  # length of sentence
             feat_dic_list.append(feat_dic)
             label_list.append(line[-1])
-
         self.label_list = label_list
+
         # sparse matrix & test
         sparse_feature_matrix = self.dv.transform(feat_dic_list)
         self.result_list = self.model.predict(sparse_feature_matrix)
@@ -391,4 +411,5 @@ class ML:
         print(report)
 
 
+# instantiation
 ml = ML()
