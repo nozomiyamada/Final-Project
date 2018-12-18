@@ -102,8 +102,8 @@ def scrape(tsv_file, start_id, number):
             description = return_str(dict['description'])
             article = return_str(dict['articleBody'])
 
-            file.write(str(id) + '\t' + headline + '\t' + description
-                       + '\t' + article + '\n')  # save as tsv
+            write_file.write(str(id) + '\t' + headline + '\t' + description
+                             + '\t' + article + '\n')  # save as tsv
     write_file.close()
 
 
