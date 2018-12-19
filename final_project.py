@@ -23,18 +23,31 @@ process of this program
 
 all process
 1) scrape('thairath.tsv', 130000, 1000)
-1) error_check('thairath.tsv')
-    > if any, print_content(id)
-    > copy_headline(tsv, *id)
-2) find_article('ญี่ปุ่น', 'JP', 'country.tsv')
-2) count_label('country.tsv')
+1) error_check ... 5 methods
+    - column_check(open_tsv, num_of_row) 
+        whether the number of column is correct  
+    - print_content(open_tsv, id) 
+        print one article by specifying id
+    - copy_headline(open_tsv, write_tsv, *id) 
+        if there is no description, copy headline
+    - delete_line(open_tsv, write_tsv, id) 
+        delete one article
+    - delete_multi_label(open_tsv, write_tsv)
+        delete article that has more than 2 labels
+
+2) find_article(open_tsv, write_tsv, keyword, label)
+2) count_label(open_tsv)
+
+3) tokenize_all
 3) tokenize_headline('country.tsv', 'headline.tsv', 0, 1000)
+
 4) ml.train('headline.tsv', 1)
 4) ml.evaluate('headline_test.tsv', 1)
 4) get_features(0, 100)
 """
 
 ### 1. function for scraping ###
+
 # all contents of Thairath are https://www.thairath.co.th/content/*******
 url = 'https://www.thairath.co.th/content/'
 
@@ -68,7 +81,7 @@ def return_str(text):
         return text_trim(text)
 
 
-def scrape(tsv_file, start_id, number):
+def scrape(open_tsv, start_id, number):
     """
     specify content id and the maximum number of request.get
 
@@ -88,7 +101,7 @@ def scrape(tsv_file, start_id, number):
     ##note: all articles have the same structure "<script>...</script>" more than 2 times
     but always final one is the real content
     """
-    write_file = open(tsv_file, 'a', encoding='utf-8')  # append mode
+    write_file = open(open_tsv, 'a', encoding='utf-8')  # append mode
     for id in range(start_id, start_id + number):
         response = requests.get(url + str(id))  # get html
         if response.status_code == 200:  # if 404 pass
@@ -107,25 +120,25 @@ def scrape(tsv_file, start_id, number):
     write_file.close()
 
 
-# error check 1 (in case the number of rows are incorrect)
-def error_check(tsv_file, num_of_row):
+# error check 1 (in case the number of columns are incorrect)
+def column_check(open_tsv, num_of_column):
     """
     the correct number of thairath.tsv is 4 (id, headline, description, article)
     the correct number of labeled tsv is 5 (id, headline, description, article, label)
-    return the id and the incorrect number of rows
+    return the id and the incorrect number of columns
 
-    error_check('thairath.tsv', 4)
+    column_check('thairath.tsv', 4)
     >> 1011000 5
     """
-    with open(tsv_file) as file:
+    with open(open_tsv, 'r', encoding='utf-8') as file:
         lines = csv.reader(file, delimiter='\t')
         for line in lines:
-            if len(line) != num_of_row:
+            if len(line) != num_of_column:
                 print(line[0], len(line))  # print id of incorrect column
 
 
 # error check 2 (specify how incorrect one incorrect)
-def print_content(tsv_file, id):
+def print_content(open_tsv, id):
     """
     print one article from id in order to check
 
@@ -135,7 +148,7 @@ def print_content(tsv_file, id):
     >> description
     >> article
     """
-    with open(tsv_file) as file:
+    with open(open_tsv, 'r', encoding='utf-8') as file:
         lines = csv.reader(file, delimiter='\t')
         for line in lines:
             if line[0] == str(id):
@@ -145,7 +158,7 @@ def print_content(tsv_file, id):
 
 
 # error check 3 (reshape tsv)
-def copy_headline(tsv_file, *id):  # *id > tuple of ids
+def copy_headline(open_tsv, write_tsv, *id):  # *id > tuple of ids
     """
     some articles have only headline (no description)
     if then, copy headline to description
@@ -159,8 +172,8 @@ def copy_headline(tsv_file, *id):  # *id > tuple of ids
     copy_headline(tsv_file, 1200000, 1200001)
     >> save [id, headline, headline(copy), article] in tsv
     """
-    open_file = open(tsv_file, 'r')
-    write_file = open('new.tsv', 'w')
+    open_file = open(open_tsv, 'r', encoding='utf-8')
+    write_file = open(write_tsv, 'w', encoding='utf-8')
     lines = csv.reader(open_file, delimiter='\t')
     new_list = []
     for line in lines:
@@ -178,12 +191,12 @@ def copy_headline(tsv_file, *id):  # *id > tuple of ids
 
 
 # error check 4 (delete article)
-def delete(tsv_file, id):
+def delete_line(open_tsv, write_tsv, id):
     """
     delete one line with ID
     """
-    open_file = open(tsv_file)
-    write_file = open('new.tsv', 'w')
+    open_file = open(open_tsv, 'r', encoding='utf-8')
+    write_file = open(write_tsv, 'w', encoding='utf-8')
     lines = csv.reader(open_file, delimiter='\t')
     new_list = []
     for line in lines:
@@ -191,6 +204,31 @@ def delete(tsv_file, id):
             pass
         else:
             new_list.append(line)
+
+    # save as new tsv file
+    writer = csv.writer(write_file, lineterminator='\n', delimiter='\t')
+    writer.writerows(new_list)
+    open_file.close()
+    write_file.close()
+
+
+# error check 5 (delete multi labeled article)
+def delete_multi_label(open_tsv, write_tsv):
+    """
+    some articles have more than two labels
+    if have, delete the article
+    make list of id before, if the same id are in the list then dont append
+    """
+    open_file = open(open_tsv, 'r', encoding='utf-8')
+    write_file = open(write_tsv, 'w', encoding='utf-8')
+    lines = list(csv.reader(open_file, delimiter='\t'))
+    id_list = [line[0] for line in lines]  # make list of id
+    new_list = []
+    for line in lines:
+        if id_list.count(line[0]) == 1:  # append article to new list iff the id is unique
+            new_list.append(line)
+        else:
+            pass
 
     # save as new tsv file
     writer = csv.writer(write_file, lineterminator='\n', delimiter='\t')
@@ -230,7 +268,7 @@ def find_article(open_tsv, write_tsv, keyword, label):
     write_file.close()
 
 
-def count_label(tsv_file):
+def count_label(open_tsv):
     """
     open tsv file > tuple(id, headline, description, article, label)
     and print the number of each label
@@ -239,7 +277,7 @@ def count_label(tsv_file):
     >>[('JP', 3000), ('US', 2000), ('TH', 1000)]
     """
     ### open files ###
-    file = open(tsv_file, 'r', encoding='utf-8')
+    file = open(open_tsv, 'r', encoding='utf-8')
     lines = csv.reader(file, delimiter='\t')
 
     ### make label list ###
@@ -253,6 +291,12 @@ def count_label(tsv_file):
 
 ### 3. functions for tokenize ###
 def tokenizer(text):
+    """
+    use tltk.nlp.word_segment
+    output is like this:
+    'กรุงเทพมหานคร|<s/>เป็น|เมืองหลวง|และ|นคร|ที่|มี|ประชากร|มาก|ที่สุด|ของ|ประเทศ|ไทย|<s/>'
+    split with '|' and cut <s/>, <u/>, Fail > return list of words
+    """
     tokens = tltk.nlp.word_segment(text).split('|')
     word_list = []
     for token in tokens:
@@ -266,7 +310,7 @@ def tokenizer(text):
     return word_list
 
 
-def tokenize_check(tsv_file, index):
+def tokenize_check(open_tsv, index):
     """
     print tokenized headline, description, article
 
@@ -276,7 +320,7 @@ def tokenize_check(tsv_file, index):
     ['นาย', 'พิ', 'ศักดิ์', 'จิต', 'วิริยะ', 'วศิน',...]
     ['นาย', 'พิ', 'ศักดิ์', 'จิต', 'วิริยะ', 'วศิน',...]
     """
-    with open(tsv_file) as file:
+    with open(open_tsv, 'r', encoding='utf-8') as file:
         lines = csv.reader(file, delimiter='\t')
         line = list(lines)[index]
         print(tokenizer(line[1]), '\n')
@@ -317,7 +361,7 @@ def tokenize_all(open_tsv, write_tsv, start_index, end_index):
 
 def tokenize_headline(open_tsv, write_tsv, start_index, end_index):
     """
-    tokenize only headline
+    tokenize only headline and save
     """
     open_file = open(open_tsv, 'r', encoding='utf-8')
     write_file = open(write_tsv, 'a', encoding='utf-8')  # append mode
@@ -335,9 +379,17 @@ def tokenize_headline(open_tsv, write_tsv, start_index, end_index):
 class ML:
     """
     method
-    1: .train(train_tsv, index)
-    2: .evaluate(test_tsv, index)
+    1: .train(train_tsv, target)
+    2: .evaluate(test_tsv, target)
     3: .get_feature(label_index, top_k)
+
+    target: 1 = headline, 2 = description, 3 = articlebody
+    articlebody takes a lot of time (I gave up)
+
+    instantiation: ml = ML()
+    ml.train('headline.tsv', 1) > no printed result
+    ml.evaluate('headline_test.tsv', 1) > print F score
+    ml.get_feature(1, 30) > print top 30 of label 1
     """
 
     def __init__(self):
@@ -351,7 +403,7 @@ class ML:
         train target: headline...1, description...2, article...3
         """
         # make label list and feature dictionary
-        file = open(train_tsv)
+        file = open(train_tsv, 'r', encoding='utf-8')
         lines = csv.reader(file, delimiter='\t')
 
         label_list = []
@@ -369,7 +421,7 @@ class ML:
         self.model.fit(sparse_feature_matrix, np.array(label_list))
 
     def get_feature(self, label_index, top_k):
-        # get features from index
+        # get top k features of one label
         parameter_matrix = self.model.coef_
         top_features = parameter_matrix.argsort()[:, -(top_k) - 1:-1]
         label_top_features = [self.dv.get_feature_names()[x] for x
@@ -378,7 +430,8 @@ class ML:
         print(label_top_features)
 
     def evaluate(self, test_tsv, target):
-        file = open(test_tsv)
+        # the same way as train
+        file = open(test_tsv, 'r', encoding='utf-8')
         lines = csv.reader(file, delimiter='\t')
 
         label_list = []
