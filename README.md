@@ -60,4 +60,4 @@ avg / total       0.65      0.63      0.63       595
 </p>
 <br>
 <h3> 23/12  </h3>
-feature matrix $\delta(w,d)$ > $n(w,d)$
+change feature matrix: δ(w,d) -> n(w,d)
