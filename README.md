@@ -61,6 +61,7 @@ avg / total       0.65      0.63      0.63       595
 <br>
 <h3> 23/12  </h3>
 change feature matrix: δ(w,d) -> n(w,d)
+<pre>
 Accuracy
 0.6336134453781512
 
@@ -81,3 +82,4 @@ Report
           4       0.70      0.52      0.60        82
 
 avg / total       0.65      0.63      0.63       595
+</pre>
